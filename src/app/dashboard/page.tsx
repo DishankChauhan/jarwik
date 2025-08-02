@@ -34,7 +34,7 @@ function DashboardContent() {
 
   // Load conversation history
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
 
     const messagesQuery = query(
       collection(db, 'conversations'),
@@ -60,7 +60,7 @@ function DashboardContent() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user]); // Removed 'db' dependency as it's not needed
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -68,7 +68,7 @@ function DashboardContent() {
   }, [messages]);
 
   const sendMessage = async (content: string, source: 'text' | 'voice' = 'text') => {
-    if (!user || !content.trim()) return;
+    if (!user || !content.trim() || !db) return;
 
     try {
       setIsLoading(true);
@@ -91,6 +91,10 @@ function DashboardContent() {
 
       // Simulate AI response (replace with actual AI integration later)
       setTimeout(async () => {
+        if (!db) {
+          setIsLoading(false);
+          return;
+        }
         const assistantMessage = {
           userId: user.uid,
           type: 'assistant' as const,

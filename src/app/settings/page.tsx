@@ -1,9 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
+import { useAuth } from '@/hooks/useAuth';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Image from 'next/image';
 
@@ -16,7 +14,7 @@ export default function SettingsPage() {
 }
 
 function SettingsContent() {
-  const [user] = useAuthState(auth);
+  const { user, signOut } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [autoSave, setAutoSave] = useState(true);
@@ -24,7 +22,7 @@ function SettingsContent() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await signOut();
     } catch (error) {
       console.error('Error signing out:', error);
     }

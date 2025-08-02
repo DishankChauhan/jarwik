@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '@/lib/firebase';
+import { useAuth } from '@/hooks/useAuth';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 interface ConversationHistory {
@@ -23,7 +22,7 @@ export default function HistoryPage() {
 }
 
 function HistoryContent() {
-  const [user] = useAuthState(auth);
+  const { user } = useAuth();
   const [conversations, setConversations] = useState<ConversationHistory[]>([]);
   const [loading, setLoading] = useState(true);
 

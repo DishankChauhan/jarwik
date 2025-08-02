@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { 
-  User, 
-  signInWithPopup, 
+import {
+  User,
+  signInWithPopup,
   signOut as firebaseSignOut,
-  onAuthStateChanged 
+  onAuthStateChanged
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, googleProvider, microsoftProvider, appleProvider, db } from '@/lib/firebase';
@@ -29,6 +29,12 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Only set up auth listener if Firebase is initialized
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       
@@ -53,6 +59,9 @@ export function useAuth() {
   }, []);
 
   const signInWithGoogle = async () => {
+    if (!auth || !googleProvider) {
+      throw new Error('Firebase not initialized');
+    }
     try {
       const result = await signInWithPopup(auth, googleProvider);
       return result.user;
@@ -63,6 +72,9 @@ export function useAuth() {
   };
 
   const signInWithMicrosoft = async () => {
+    if (!auth || !microsoftProvider) {
+      throw new Error('Firebase not initialized');
+    }
     try {
       const result = await signInWithPopup(auth, microsoftProvider);
       return result.user;
@@ -73,6 +85,9 @@ export function useAuth() {
   };
 
   const signInWithApple = async () => {
+    if (!auth || !appleProvider) {
+      throw new Error('Firebase not initialized');
+    }
     try {
       const result = await signInWithPopup(auth, appleProvider);
       return result.user;
@@ -83,6 +98,9 @@ export function useAuth() {
   };
 
   const signOut = async () => {
+    if (!auth) {
+      throw new Error('Firebase not initialized');
+    }
     try {
       await firebaseSignOut(auth);
     } catch (error) {
@@ -92,8 +110,7 @@ export function useAuth() {
   };
 
   const updateUserProfile = async (updates: Partial<UserProfile>) => {
-    if (!user || !userProfile) return;
-
+    if (!user || !userProfile || !db) return;
     try {
       const updatedProfile = { ...userProfile, ...updates };
       await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
@@ -118,6 +135,11 @@ export function useAuth() {
 
 // Helper functions
 async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  if (!db) {
+    console.warn('Firestore not initialized, skipping user profile fetch');
+    return null;
+  }
+  
   try {
     const docRef = doc(db, 'users', uid);
     const docSnap = await getDoc(docRef);
@@ -152,6 +174,11 @@ async function createUserProfile(user: User): Promise<UserProfile> {
     createdAt: new Date(),
     lastLoginAt: new Date(),
   };
+
+  if (!db) {
+    console.warn('Firestore not initialized, returning profile without saving');
+    return profile;
+  }
 
   try {
     await setDoc(doc(db, 'users', user.uid), profile);

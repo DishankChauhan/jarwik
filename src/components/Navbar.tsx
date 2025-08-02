@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
+import { useAuth } from '@/hooks/useAuth';
 import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Home, LayoutDashboard, History, Settings, User, LogOut, type LucideIcon } from 'lucide-react';
+import { Home, LayoutDashboard, History, Settings, User, LogOut } from 'lucide-react';
 import { ExpandableTabs } from '@/components/ui/expandable-tabs';
+
+import { LucideIcon } from 'lucide-react';
 
 interface NavTab {
   title: string;
@@ -22,14 +22,14 @@ interface NavSeparator {
 }
 
 export default function Navbar() {
-  const [user, loading] = useAuthState(auth);
+  const { user, loading, signOut } = useAuth();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await signOut();
       setIsProfileMenuOpen(false);
       router.push('/');
     } catch (error) {
@@ -175,20 +175,23 @@ export default function Navbar() {
       {/* Mobile Navigation - Simple fallback */}
       <div className="md:hidden mt-4 bg-white/95 backdrop-blur-md rounded-2xl shadow-lg border border-gray-100/50 mx-4 p-4">
         <div className="grid grid-cols-2 gap-2">
-          {navTabs.filter((tab): tab is NavTab => !('type' in tab)).map((tab) => (
+          {navTabs
+            .filter((tab): tab is NavTab => !('type' in tab))
+            .map((tab) => (
               <button
                 key={tab.title}
                 onClick={() => handleTabClick(tab)}
                 className={`flex items-center space-x-2 p-3 rounded-xl text-sm font-medium transition-colors duration-200 ${
                   pathname === tab.href
-                    ? "bg-gray-100 text-orange-600"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    ? 'bg-gray-100 text-orange-600'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
                 <tab.icon size={18} />
                 <span>{tab.title}</span>
               </button>
-            ))}        </div>
+            ))}
+        </div>
         
         {/* Mobile Auth Section */}
         {!loading && !user && (

@@ -1,7 +1,6 @@
 'use client';
 
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '@/lib/firebase';
+import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -10,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const [user, loading] = useAuthState(auth);
+  const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
