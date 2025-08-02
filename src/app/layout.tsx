@@ -1,21 +1,25 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import ConsoleOverrideProvider from "@/components/ConsoleOverrideProvider";
+import Navbar from "@/components/Navbar";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
   title: "Jarwik - AI Voice Assistant",
-  description: "AI Voice Assistant powered by ElevenLabs ConvAI",
+  description: "Your intelligent voice assistant powered by advanced AI",
+  icons: {
+    icon: [
+      { url: '/jarwik logo.png' },
+      { url: '/favicon.png' },
+    ],
+    shortcut: '/jarwik logo.png',
+    apple: '/jarwik logo.png',
+  },
 };
 
 export default function RootLayout({
@@ -25,11 +29,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${inter.variable} font-sans antialiased bg-white min-h-screen`}>
         <ConsoleOverrideProvider>
-          {children}
+          <Navbar />
+          <main className="pt-24 bg-white min-h-screen">
+            {children}
+          </main>
         </ConsoleOverrideProvider>
       </body>
     </html>

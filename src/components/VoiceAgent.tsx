@@ -46,41 +46,48 @@ export default function VoiceAgent({ className = '' }: VoiceAgentProps) {
 
   return (
     <div className={`relative ${className}`}>
-      {/* Container for the animated circles */}
+      {/* Container for the voice agent */}
       <div 
         className="relative flex items-center justify-center cursor-pointer transition-all duration-500 ease-out"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleActivateAgent}
+        style={{ width: '300px', height: '200px' }}
       >
-        {/* Background circles that appear on hover */}
-        <div className={`absolute transition-all duration-700 ease-out ${isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`}>
-          {/* Left circle */}
-          <div className="absolute w-32 h-32 bg-gradient-to-br from-yellow-300 to-orange-400 rounded-full -translate-x-16 opacity-60 blur-sm"></div>
-          {/* Right circle */}
-          <div className="absolute w-32 h-32 bg-gradient-to-bl from-orange-300 to-amber-400 rounded-full translate-x-16 opacity-60 blur-sm"></div>
+        {/* Left circle - appears on hover */}
+        <div className={`absolute transition-all duration-700 ease-out ${
+          isHovered ? 'opacity-100 scale-100 translate-x-0' : 'opacity-0 scale-75 translate-x-8'
+        }`}
+        style={{ left: '20px' }}>
+          <div className="w-24 h-24 bg-gradient-to-br from-amber-200 to-orange-300 rounded-full opacity-80"></div>
         </div>
 
-        {/* Main center circle */}
-        <div className={`relative w-40 h-40 bg-gradient-to-br from-yellow-200 via-orange-200 to-amber-300 rounded-full flex items-center justify-center transition-all duration-500 ease-out shadow-2xl ${
-          isHovered ? 'scale-110 shadow-orange-200/50' : 'scale-100'
+        {/* Right circle - appears on hover */}
+        <div className={`absolute transition-all duration-700 ease-out ${
+          isHovered ? 'opacity-100 scale-100 translate-x-0' : 'opacity-0 scale-75 -translate-x-8'
+        }`}
+        style={{ right: '20px' }}>
+          <div className="w-24 h-24 bg-gradient-to-br from-orange-300 to-amber-200 rounded-full opacity-80"></div>
+        </div>
+
+        {/* Main center circle - always visible */}
+        <div className={`relative w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center transition-all duration-500 ease-out shadow-lg z-10 ${
+          isHovered ? 'scale-110 shadow-xl' : 'scale-100'
         } ${
-          isActive ? 'animate-pulse bg-gradient-to-br from-green-200 via-emerald-200 to-teal-300' : ''
+          isActive ? 'bg-gradient-to-br from-green-400 to-green-500' : ''
         } ${
-          isSpeaking ? 'ring-4 ring-teal-400 ring-opacity-60' : ''
+          isSpeaking ? 'animate-pulse' : ''
         }`}>
           
           {/* Microphone icon */}
-          <div className={`w-8 h-8 flex items-center justify-center transition-all duration-300 ${
-            isActive ? 'text-teal-700' : 'text-orange-700'
-          }`}>
+          <div className="w-6 h-6 flex items-center justify-center text-white">
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
               fill="none" 
               viewBox="0 0 24 24" 
-              strokeWidth={2} 
+              strokeWidth={2.5} 
               stroke="currentColor" 
-              className="w-6 h-6"
+              className="w-5 h-5"
             >
               <path 
                 strokeLinecap="round" 
@@ -95,34 +102,11 @@ export default function VoiceAgent({ className = '' }: VoiceAgentProps) {
             </svg>
           </div>
 
-          {/* Ripple effect when active */}
+          {/* Active indicator ring */}
           {isActive && (
-            <div className="absolute inset-0 rounded-full border-2 border-teal-300 animate-ping opacity-30"></div>
+            <div className="absolute inset-0 rounded-full border-2 border-green-300 animate-ping opacity-50"></div>
           )}
         </div>
-
-        {/* Voice activity indicator */}
-        {isActive && (
-          <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2">
-            <div className="flex space-x-1">
-              <div className={`w-1 h-4 bg-teal-500 rounded-full ${isSpeaking ? 'animate-pulse' : 'opacity-50'}`}></div>
-              <div className={`w-1 h-6 bg-teal-500 rounded-full ${isSpeaking ? 'animate-pulse' : 'opacity-50'}`} style={{ animationDelay: '0.1s' }}></div>
-              <div className={`w-1 h-5 bg-teal-500 rounded-full ${isSpeaking ? 'animate-pulse' : 'opacity-50'}`} style={{ animationDelay: '0.2s' }}></div>
-              <div className={`w-1 h-4 bg-teal-500 rounded-full ${isSpeaking ? 'animate-pulse' : 'opacity-50'}`} style={{ animationDelay: '0.3s' }}></div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Status text */}
-      <div className="text-center mt-8">
-        <p className={`text-sm transition-colors duration-300 ${
-          isActive ? 'text-teal-600' : 'text-gray-500'
-        }`}>
-          {conversation.status === 'connecting' ? 'Connecting to voice agent...' :
-           isActive ? (isSpeaking ? 'Agent is speaking...' : 'Listening - speak now!') : 
-           'Click to start voice conversation'}
-        </p>
       </div>
     </div>
   );
