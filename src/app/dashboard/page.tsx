@@ -89,23 +89,51 @@ function DashboardContent() {
         setInputValue('');
       }
 
-      // Simulate AI response (replace with actual AI integration later)
-      setTimeout(async () => {
-        if (!db) {
-          setIsLoading(false);
-          return;
-        }
+      // Call the dedicated chat API
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: content,
+            userId: user.uid,
+            conversationHistory: messages.slice(-5).map(msg => ({
+              role: msg.type === 'user' ? 'user' : 'assistant',
+              content: msg.content,
+              timestamp: msg.timestamp.toISOString()
+            }))
+          }),
+        });
+
+        const aiResponse = await response.json();
+        
         const assistantMessage = {
           userId: user.uid,
           type: 'assistant' as const,
-          content: `I received your ${source} message: "${content}". This is a placeholder response. In the next phase, I'll be connected to the actual AI backend to provide intelligent responses and perform actions like managing your calendar, sending emails, and more!`,
+          content: aiResponse.message || 'I apologize, but I encountered an error processing your request.',
           timestamp: Timestamp.now(),
           source: 'text' as const,
         };
 
         await addDoc(collection(db, 'conversations'), assistantMessage);
-        setIsLoading(false);
-      }, 1000);
+      } catch (error) {
+        console.error('Error calling chat API:', error);
+        
+        // Fallback message
+        const errorMessage = {
+          userId: user.uid,
+          type: 'assistant' as const,
+          content: 'I apologize, but I encountered an error processing your request. Please try again or check your account permissions in Settings.',
+          timestamp: Timestamp.now(),
+          source: 'text' as const,
+        };
+
+        await addDoc(collection(db, 'conversations'), errorMessage);
+      }
+      
+      setIsLoading(false);
 
     } catch (error) {
       console.error('Error sending message:', error);

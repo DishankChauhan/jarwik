@@ -1,11 +1,13 @@
 import { google } from 'googleapis';
+import { userAuthService } from '@/lib/auth/user-auth';
+import { googleOAuthService } from '@/lib/auth/google-oauth';
 
 export interface GmailService {
-  sendEmail: (to: string, subject: string, body: string) => Promise<boolean>;
-  getEmails: (query?: string, maxResults?: number) => Promise<EmailMessage[]>;
-  markAsRead: (messageId: string) => Promise<boolean>;
-  replyToEmail: (messageId: string, body: string) => Promise<boolean>;
-  draftEmail: (to: string, subject: string, body: string) => Promise<string>;
+  sendEmail: (userId: string, to: string, subject: string, body: string) => Promise<boolean>;
+  getEmails: (userId: string, query?: string, maxResults?: number) => Promise<EmailMessage[]>;
+  markAsRead: (userId: string, messageId: string) => Promise<boolean>;
+  replyToEmail: (userId: string, messageId: string, body: string) => Promise<boolean>;
+  draftEmail: (userId: string, to: string, subject: string, body: string) => Promise<string>;
 }
 
 export interface EmailMessage {
@@ -22,41 +24,36 @@ export interface EmailMessage {
 }
 
 class GmailServiceImpl implements GmailService {
-  private gmail: any;
-  private isInitialized = false;
-
   constructor() {
-    this.initializeGmail();
+    // No longer need global initialization
   }
 
-  private async initializeGmail() {
+  private async getAuthenticatedGmailClient(userId: string) {
+    // Get user's Google auth
+    const userAuth = await userAuthService.getGoogleAuth(userId);
+    if (!userAuth) {
+      throw new Error('User not authenticated with Google. Please connect your Google account first.');
+    }
+
+    // Ensure tokens are valid
+    const validTokens = await googleOAuthService.ensureValidTokens(userAuth.tokens);
+    
+    // If tokens were refreshed, save them
+    if (validTokens !== userAuth.tokens) {
+      await userAuthService.saveGoogleAuth(userId, validTokens, userAuth.email, userAuth.scopes);
+    }
+
+    // Create authenticated client
+    const authClient = googleOAuthService.getAuthenticatedClient(validTokens);
+    return google.gmail({ version: 'v1', auth: authClient });
+  }
+
+  async sendEmail(userId: string, to: string, subject: string, body: string): Promise<boolean> {
     try {
-      // Use API key for simpler setup (read-only access)
-      this.gmail = google.gmail({ 
-        version: 'v1', 
-        auth: process.env.GOOGLE_API_KEY 
-      });
-      this.isInitialized = true;
-    } catch (error) {
-      console.error('Failed to initialize Gmail service:', error);
-    }
-  }
-
-  private async ensureInitialized() {
-    if (!this.isInitialized) {
-      await this.initializeGmail();
-    }
-    if (!this.isInitialized) {
-      throw new Error('Gmail service not initialized');
-    }
-  }
-
-  async sendEmail(to: string, subject: string, body: string): Promise<boolean> {
-    try {
-      await this.ensureInitialized();
+      const gmail = await this.getAuthenticatedGmailClient(userId);
 
       const message = this.createMessage(to, subject, body);
-      const response = await this.gmail.users.messages.send({
+      const response = await gmail.users.messages.send({
         userId: 'me',
         requestBody: {
           raw: message,
@@ -66,15 +63,15 @@ class GmailServiceImpl implements GmailService {
       return !!response.data.id;
     } catch (error) {
       console.error('Failed to send email:', error);
-      return false;
+      throw error;
     }
   }
 
-  async getEmails(query: string = '', maxResults: number = 10): Promise<EmailMessage[]> {
+  async getEmails(userId: string, query: string = '', maxResults: number = 10): Promise<EmailMessage[]> {
     try {
-      await this.ensureInitialized();
+      const gmail = await this.getAuthenticatedGmailClient(userId);
 
-      const response = await this.gmail.users.messages.list({
+      const response = await gmail.users.messages.list({
         userId: 'me',
         q: query,
         maxResults,
@@ -84,15 +81,17 @@ class GmailServiceImpl implements GmailService {
       
       if (response.data.messages) {
         for (const message of response.data.messages) {
-          const messageData = await this.gmail.users.messages.get({
-            userId: 'me',
-            id: message.id,
-            format: 'full',
-          });
+          if (message.id) {
+            const messageData = await gmail.users.messages.get({
+              userId: 'me',
+              id: message.id,
+              format: 'full',
+            });
 
-          const emailMessage = this.parseEmailMessage(messageData.data);
-          if (emailMessage) {
-            messages.push(emailMessage);
+            const emailMessage = this.parseEmailMessage(messageData.data);
+            if (emailMessage) {
+              messages.push(emailMessage);
+            }
           }
         }
       }
@@ -104,11 +103,11 @@ class GmailServiceImpl implements GmailService {
     }
   }
 
-  async markAsRead(messageId: string): Promise<boolean> {
+  async markAsRead(userId: string, messageId: string): Promise<boolean> {
     try {
-      await this.ensureInitialized();
+      const gmail = await this.getAuthenticatedGmailClient(userId);
 
-      await this.gmail.users.messages.modify({
+      await gmail.users.messages.modify({
         userId: 'me',
         id: messageId,
         requestBody: {
@@ -123,26 +122,26 @@ class GmailServiceImpl implements GmailService {
     }
   }
 
-  async replyToEmail(messageId: string, body: string): Promise<boolean> {
+  async replyToEmail(userId: string, messageId: string, body: string): Promise<boolean> {
     try {
-      await this.ensureInitialized();
+      const gmail = await this.getAuthenticatedGmailClient(userId);
 
       // Get original message to get thread ID and subject
-      const originalMessage = await this.gmail.users.messages.get({
+      const originalMessage = await gmail.users.messages.get({
         userId: 'me',
         id: messageId,
         format: 'full',
       });
 
-      const headers = originalMessage.data.payload.headers;
-      const subject = headers.find((h: any) => h.name === 'Subject')?.value || '';
-      const from = headers.find((h: any) => h.name === 'From')?.value || '';
-      const threadId = originalMessage.data.threadId;
+      const headers = originalMessage.data.payload?.headers;
+      const subject = headers?.find((h: any) => h.name === 'Subject')?.value || '';
+      const from = headers?.find((h: any) => h.name === 'From')?.value || '';
+      const threadId = originalMessage.data.threadId || undefined;
 
       const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
       const message = this.createMessage(from, replySubject, body, threadId);
 
-      const response = await this.gmail.users.messages.send({
+      const response = await gmail.users.messages.send({
         userId: 'me',
         requestBody: {
           raw: message,
@@ -157,12 +156,12 @@ class GmailServiceImpl implements GmailService {
     }
   }
 
-  async draftEmail(to: string, subject: string, body: string): Promise<string> {
+  async draftEmail(userId: string, to: string, subject: string, body: string): Promise<string> {
     try {
-      await this.ensureInitialized();
+      const gmail = await this.getAuthenticatedGmailClient(userId);
 
       const message = this.createMessage(to, subject, body);
-      const response = await this.gmail.users.drafts.create({
+      const response = await gmail.users.drafts.create({
         userId: 'me',
         requestBody: {
           message: {
@@ -179,17 +178,40 @@ class GmailServiceImpl implements GmailService {
   }
 
   private createMessage(to: string, subject: string, body: string, threadId?: string): string {
+    // Create proper RFC 2822 formatted email
+    const boundary = 'boundary_' + Math.random().toString(36).substring(2);
+    
     const messageParts = [
       `To: ${to}`,
       `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
       threadId ? `In-Reply-To: ${threadId}` : '',
       threadId ? `References: ${threadId}` : '',
       '',
+      `--${boundary}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      `Content-Transfer-Encoding: quoted-printable`,
+      '',
       body,
-    ].filter(Boolean);
+      '',
+      `--${boundary}`,
+      `Content-Type: text/html; charset="UTF-8"`,
+      `Content-Transfer-Encoding: quoted-printable`,
+      '',
+      `<div>${body.replace(/\n/g, '<br>')}</div>`,
+      '',
+      `--${boundary}--`,
+    ].filter(part => part !== null && part !== undefined);
 
-    const message = messageParts.join('\n');
-    return Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+    const message = messageParts.join('\r\n');
+    
+    // Encode to base64url (Gmail API format)
+    return Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
   }
 
   private parseEmailMessage(messageData: any): EmailMessage | null {

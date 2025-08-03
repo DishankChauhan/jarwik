@@ -5,15 +5,14 @@ import { parseNaturalTime, formatDateForUser } from '@/utils/timeParser';
 import { parseIntentLightweight } from '@/utils/lightweightParser';
 import type { IntentResult } from '@/lib/services/ai';
 
-interface ElevenLabsWebhookPayload {
-  user_message: string;
-  conversation_history?: Array<{
+interface ChatRequest {
+  message: string;
+  userId: string;
+  conversationHistory?: Array<{
     role: 'user' | 'assistant';
     content: string;
     timestamp?: string;
   }>;
-  user_id?: string;
-  session_id?: string;
 }
 
 async function executeAction(intent: IntentResult, userId: string): Promise<string> {
@@ -207,19 +206,24 @@ async function executeAction(intent: IntentResult, userId: string): Promise<stri
 
 export async function POST(req: NextRequest) {
   try {
-    const payload: ElevenLabsWebhookPayload = await req.json();
-    const { user_message, conversation_history, user_id } = payload;
+    const { message, userId, conversationHistory }: ChatRequest = await req.json();
 
-    // Enhanced logging for debugging
-    console.log('🎤 ElevenLabs Voice Input:', { 
-      message: user_message, 
-      user: user_id,
+    if (!message || !userId) {
+      return NextResponse.json(
+        { error: 'Message and userId are required' },
+        { status: 400 }
+      );
+    }
+
+    console.log('💬 Chat Input:', { 
+      message, 
+      userId,
       timestamp: new Date().toISOString(),
-      hasHistory: !!conversation_history?.length
+      hasHistory: !!conversationHistory?.length
     });
 
     // OPTIMIZATION: Try lightweight parsing first to avoid OpenAI API calls
-    const lightweightIntent = parseIntentLightweight(user_message);
+    const lightweightIntent = parseIntentLightweight(message);
     let intent: IntentResult;
     let actionResult = '';
 
@@ -240,7 +244,7 @@ export async function POST(req: NextRequest) {
       });
     } else {
       // Fall back to OpenAI for complex queries
-      intent = await aiService.parseIntent(user_message);
+      intent = await aiService.parseIntent(message);
       console.log('🤖 Using OpenAI Parser:', { 
         intent: intent.intent, 
         confidence: intent.confidence 
@@ -249,7 +253,7 @@ export async function POST(req: NextRequest) {
     
     // Execute action if needed
     if (intent.action || (intent.intent !== 'general_chat' && intent.confidence > 0.7)) {
-      actionResult = await executeAction(intent, user_id || 'anonymous');
+      actionResult = await executeAction(intent, userId);
       console.log('🎯 Action Executed:', { 
         intent: intent.intent, 
         success: !actionResult.includes('❌')
@@ -259,11 +263,11 @@ export async function POST(req: NextRequest) {
     // Generate response only if we need general chat or action failed
     let aiResponse = '';
     if (intent.intent === 'general_chat' || actionResult.includes('❌')) {
-      aiResponse = await aiService.generateResponse(user_message, {
-        userId: user_id || 'anonymous',
+      aiResponse = await aiService.generateResponse(message, {
+        userId: userId,
         currentTime: new Date(),
         timeZone: 'UTC',
-        previousMessages: conversation_history?.slice(-2).map(msg => ({
+        previousMessages: conversationHistory?.slice(-2).map(msg => ({
           role: msg.role,
           content: msg.content
         })) || []
@@ -278,7 +282,7 @@ export async function POST(req: NextRequest) {
       ? `${aiResponse}\n\n${actionResult}`
       : aiResponse;
 
-    console.log('✅ Sending AI Response:', { 
+    console.log('✅ Sending Chat Response:', { 
       responseLength: finalResponse.length,
       hasAction: !!intent.action,
       preview: finalResponse.substring(0, 150) + '...'
@@ -288,12 +292,11 @@ export async function POST(req: NextRequest) {
       message: finalResponse,
       action_taken: intent.action || null,
       intent_detected: intent.intent || null,
-      conversation_id: payload.session_id,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Agent webhook error:', error);
+    console.error('❌ Chat API error:', error);
     
     return NextResponse.json({
       message: "I'm sorry, I'm having trouble processing your request right now. Could you please try again?",
@@ -303,17 +306,4 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Handle GET requests for webhook verification
-export async function GET() {
-  return NextResponse.json({
-    message: 'ElevenLabs Agent Webhook Endpoint',
-    status: 'active',
-    capabilities: [
-      'Natural language processing',
-      'Email management', 
-      'SMS sending',
-      'Calendar scheduling',
-      'Reminders and tasks'
-    ]
-  });
-}
+

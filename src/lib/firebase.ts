@@ -12,11 +12,10 @@ const requiredEnvVars = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Check if we're in a browser environment and have all required env vars
-const isClientSide = typeof window !== 'undefined';
+// Check if we have all required env vars
 const hasAllEnvVars = Object.values(requiredEnvVars).every(Boolean);
 
-if (isClientSide && !hasAllEnvVars) {
+if (!hasAllEnvVars) {
   console.error('Missing Firebase environment variables:', 
     Object.entries(requiredEnvVars)
       .filter(([, value]) => !value)
@@ -26,7 +25,7 @@ if (isClientSide && !hasAllEnvVars) {
 
 const firebaseConfig = requiredEnvVars;
 
-// Initialize Firebase only on client side and when we have all env vars
+// Initialize Firebase (works on both client and server)
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
@@ -34,30 +33,33 @@ let googleProvider: GoogleAuthProvider | null = null;
 let microsoftProvider: OAuthProvider | null = null;
 let appleProvider: OAuthProvider | null = null;
 
-if (isClientSide && hasAllEnvVars) {
+if (hasAllEnvVars) {
   // Initialize Firebase
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-
-  // Initialize Firebase Authentication and get a reference to the service
-  auth = getAuth(app);
 
   // Initialize Cloud Firestore and get a reference to the service
   db = getFirestore(app);
 
-  // Auth providers
-  googleProvider = new GoogleAuthProvider();
-  microsoftProvider = new OAuthProvider('microsoft.com');
-  appleProvider = new OAuthProvider('apple.com');
+  // Initialize Firebase Authentication only on client side
+  const isClientSide = typeof window !== 'undefined';
+  if (isClientSide) {
+    auth = getAuth(app);
+    
+    // Auth providers
+    googleProvider = new GoogleAuthProvider();
+    microsoftProvider = new OAuthProvider('microsoft.com');
+    appleProvider = new OAuthProvider('apple.com');
+    
+    // Configure providers
+    googleProvider.setCustomParameters({
+      prompt: 'select_account',
+    });
 
-  // Configure providers
-  googleProvider.setCustomParameters({
-    prompt: 'select_account',
-  });
-
-  microsoftProvider.setCustomParameters({
-    prompt: 'select_account',
-    tenant: 'common',
-  });
+    microsoftProvider.setCustomParameters({
+      prompt: 'select_account',
+      tenant: 'common',
+    });
+  }
 }
 
 export { auth, db, googleProvider, microsoftProvider, appleProvider };

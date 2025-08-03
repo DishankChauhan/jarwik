@@ -76,14 +76,17 @@ class AIServiceImpl implements AIService {
     try {
       await this.ensureInitialized();
 
-      const systemPrompt = this.buildSystemPrompt(context);
+      // Simplified system prompt to reduce token usage
+      const systemPrompt = "You are Jarwik, an AI assistant. Be helpful, concise, and friendly. Keep responses under 50 words unless more detail is specifically requested.";
+      
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
       ];
 
-      // Add conversation history
-      if (context?.previousMessages) {
-        context.previousMessages.forEach(msg => {
+      // Only include last 2 messages for context to reduce tokens
+      if (context?.previousMessages && context.previousMessages.length > 0) {
+        const recentMessages = context.previousMessages.slice(-2);
+        recentMessages.forEach(msg => {
           messages.push({ role: msg.role, content: msg.content });
         });
       }
@@ -92,9 +95,9 @@ class AIServiceImpl implements AIService {
       messages.push({ role: 'user', content: message });
 
       const response = await this.openai!.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-3.5-turbo', // Much cheaper than GPT-4
         messages,
-        max_tokens: 500,
+        max_tokens: 100, // Reduced from 500
         temperature: 0.7,
       });
 
@@ -109,28 +112,20 @@ class AIServiceImpl implements AIService {
     try {
       await this.ensureInitialized();
 
-      const prompt = `
-      Analyze the following user message and extract the intent, entities, and parameters:
+      // Simplified, shorter prompt for faster and cheaper processing
+      const prompt = `Parse this message into JSON with intent, confidence, entities, parameters:
+"${message}"
 
-      Message: "${message}"
+Return format: {"intent":"send_email|set_reminder|create_event|send_sms|general_chat","confidence":0.8,"entities":{},"parameters":{}}
 
-      Please respond with a JSON object containing:
-      - intent: The main intention (e.g., "send_email", "schedule_meeting", "set_reminder", "make_call", "send_sms", "search_contacts", "general_chat")
-      - confidence: A number between 0 and 1
-      - entities: An object with extracted entities (names, dates, times, emails, phone numbers, etc.)
-      - parameters: An object with action parameters
-      - action: The specific action to take (if any)
-
-      Examples:
-      - "Send an email to John about the meeting tomorrow" -> {"intent": "send_email", "confidence": 0.9, "entities": {"recipient": "John", "subject": "meeting", "time": "tomorrow"}, "parameters": {"recipient": "John", "subject": "meeting tomorrow"}, "action": "compose_email"}
-      - "Call mom at 3 PM" -> {"intent": "make_call", "confidence": 0.95, "entities": {"contact": "mom", "time": "3 PM"}, "parameters": {"contact": "mom", "scheduledTime": "3 PM"}, "action": "schedule_call"}
-      - "What's the weather like?" -> {"intent": "general_chat", "confidence": 0.8, "entities": {}, "parameters": {"query": "weather"}, "action": "provide_info"}
-      `;
+Examples:
+- Email: {"intent":"send_email","confidence":0.9,"entities":{"email":"john@test.com"},"parameters":{"to":"john@test.com","subject":"Hello","body":"Hi there"}}
+- Reminder: {"intent":"set_reminder","confidence":0.9,"entities":{"time":"20 minutes"},"parameters":{"reminder":"task","time":"20 minutes"}}`;
 
       const response = await this.openai!.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-3.5-turbo', // Cheaper than GPT-4
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
+        max_tokens: 150, // Reduced tokens
         temperature: 0.1,
       });
 
