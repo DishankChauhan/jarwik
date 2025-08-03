@@ -14,10 +14,10 @@ export const metadata: Metadata = {
   description: "Your intelligent voice assistant powered by advanced AI",
   icons: {
     icon: [
-      { url: '/jarwik logo.png' },
-      { url: '/favicon.png' },
+      { url: '/favicon.ico' },
+      { url: '/jarwik logo.png', type: 'image/png' },
     ],
-    shortcut: '/jarwik logo.png',
+    shortcut: '/favicon.ico',
     apple: '/jarwik logo.png',
   },
 };
