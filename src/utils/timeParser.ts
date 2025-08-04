@@ -69,6 +69,44 @@ export function parseNaturalTime(timeStr: string): Date | null {
     return nextWeek;
   }
 
+  // Handle specific days of the week (e.g., "Monday", "Wednesday at 1pm", "next Friday")
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < dayNames.length; i++) {
+    const dayName = dayNames[i];
+    if (normalizedTime.includes(dayName)) {
+      const today = now.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+      const targetDay = i; // 0 = Sunday, 1 = Monday, etc.
+      
+      // Calculate days to add to get to the target day
+      let daysToAdd = targetDay - today;
+      if (daysToAdd <= 0) {
+        daysToAdd += 7; // Next occurrence of this day
+      }
+      
+      const targetDate = new Date(now);
+      targetDate.setUTCDate(targetDate.getUTCDate() + daysToAdd);
+      
+      // Try to extract specific time for this day
+      const timeMatch = normalizedTime.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+      if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = parseInt(timeMatch[2] || '0');
+        const ampm = timeMatch[3]?.toLowerCase();
+        
+        if (ampm === 'pm' && hours !== 12) hours += 12;
+        if (ampm === 'am' && hours === 12) hours = 0;
+        
+        // Set the time in UTC but account for IST
+        targetDate.setUTCHours(hours - 5, minutes - 30, 0, 0);
+      } else {
+        // Default to 9 AM IST = 3:30 AM UTC
+        targetDate.setUTCHours(3, 30, 0, 0);
+      }
+      
+      return targetDate;
+    }
+  }
+
   // Handle specific times today (e.g., "3 PM", "2:30 PM", "10:30") - interpreted as IST
   const timeMatch = normalizedTime.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
   if (timeMatch) {
@@ -128,29 +166,41 @@ function extractNumber(text: string): number | null {
 export function formatDateForUser(date: Date): string {
   const now = new Date();
   const diffMs = date.getTime() - now.getTime();
-  const diffMinutes = Math.round(diffMs / (1000 * 60));
-  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMinutes < 60) {
-    return `in ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
-  } else if (diffHours < 24) {
-    return `in ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
-  } else if (diffDays < 7) {
-    return `in ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+  // Use user's local timezone instead of hardcoding IST
+  const localDate = new Date(date);
+  
+  // Get day names
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const today = new Date(now);
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  
+  // Compare dates in local timezone
+  const isToday = localDate.toDateString() === today.toDateString();
+  const isTomorrow = localDate.toDateString() === tomorrow.toDateString();
+  
+  const timeStr = localDate.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+  
+  if (isToday) {
+    return `today at ${timeStr}`;
+  } else if (isTomorrow) {
+    return `tomorrow at ${timeStr}`;
+  } else if (diffDays <= 7) {
+    const dayName = dayNames[localDate.getDay()];
+    return `${dayName} at ${timeStr}`;
   } else {
-    // Convert to IST for display
-    const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-    const istDate = new Date(date.getTime() + istOffset);
-    
-    return istDate.toLocaleDateString('en-IN', {
+    return localDate.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       hour: 'numeric',
-      minute: '2-digit',
-      timeZone: 'Asia/Kolkata'
-    }) + ' IST';
+      minute: '2-digit'
+    });
   }
 }

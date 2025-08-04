@@ -14,7 +14,13 @@ export type {
 export type { 
   CalendarService, 
   CalendarEvent, 
-  CalendarEventInput 
+  CalendarEventInput,
+  ConflictResult,
+  SmartScheduleInput,
+  SmartScheduleResult,
+  SchedulingPreferences,
+  OptimalTimeResult,
+  RescheduleResult
 } from './calendar';
 
 export type { 

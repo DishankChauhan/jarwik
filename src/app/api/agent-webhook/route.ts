@@ -6,14 +6,13 @@ import { parseIntentLightweight } from '@/utils/lightweightParser';
 import type { IntentResult } from '@/lib/services/ai';
 
 interface ElevenLabsWebhookPayload {
+  conversation_id: string;
   user_message: string;
-  conversation_history?: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp?: string;
-  }>;
-  user_id?: string;
-  session_id?: string;
+  agent_id: string;
+  timestamp: string;
+  metadata?: {
+    user_id?: string;
+  };
 }
 
 async function executeAction(intent: IntentResult, userId: string): Promise<string> {
@@ -92,28 +91,95 @@ async function executeAction(intent: IntentResult, userId: string): Promise<stri
         return '❌ Calendar permission not granted. Please connect your Google Calendar in Settings > Connected Accounts.';
       }
 
-      // Actually create calendar event
+      // Extract event details
       const title = params.title || params.subject || params.event || 'New Event';
       const description = params.description || params.notes || params.message || '';
-      const startTime = params.startTime || params.time || params.when;
-      const endTime = params.endTime;
+      const startTimeInput = params.startTime || params.time || params.when || params.start;
+      const endTime = params.endTime || params.end;
       const attendees = params.attendees || params.invitees || [];
+      const duration = params.duration ? parseInt(String(params.duration)) : 60; // Default 1 hour
+      const checkConflicts = params.checkConflicts !== false; // Default to true
       
-      if (!startTime) {
+      console.log('📅 Calendar Parameters:', { title, startTimeInput, endTime, attendees, duration, checkConflicts, allParams: params });
+      
+      if (!startTimeInput) {
         return '❌ Please specify when you want to schedule the event.';
       }
 
+      // Parse the natural language time using our time parser
+      const parsedStartTime = parseNaturalTime(String(startTimeInput));
+      if (!parsedStartTime) {
+        return `❌ I couldn't understand the time "${startTimeInput}". Please try something like "tomorrow at 3 PM", "next Monday at 10 AM", or "in 2 hours".`;
+      }
+
+      // Ensure the time is in the future
+      if (parsedStartTime <= new Date()) {
+        return `❌ The event time "${startTimeInput}" appears to be in the past. Please specify a future time.`;
+      }
+
+      // Calculate end time if not provided
+      let parsedEndTime;
+      if (endTime) {
+        parsedEndTime = parseNaturalTime(String(endTime));
+        if (!parsedEndTime) {
+          parsedEndTime = new Date(parsedStartTime.getTime() + duration * 60 * 1000); // Default duration
+        }
+      } else {
+        parsedEndTime = new Date(parsedStartTime.getTime() + duration * 60 * 1000); // Default duration
+      }
+
       try {
-        const event = await calendarService.createEvent(userId, {
-          title: String(title),
-          description: String(description),
-          start: new Date(String(startTime)),
-          end: endTime ? new Date(String(endTime)) : new Date(Date.now() + 60 * 60 * 1000), // Default 1 hour
-          attendees: Array.isArray(attendees) ? attendees.map(String) : []
-        });
-        return event 
-          ? `✅ Calendar event "${title}" created successfully! Event ID: ${event.id}`
-          : `❌ Failed to create calendar event "${title}".`;
+        // Use smart scheduling if conflicts should be checked
+        if (checkConflicts) {
+          const smartScheduleResult = await calendarService.smartSchedule(userId, {
+            title: String(title),
+            description: String(description),
+            duration: duration,
+            attendees: Array.isArray(attendees) ? attendees.map(String) : [],
+            preferredTimes: [parsedStartTime],
+            timeRange: {
+              earliest: parsedStartTime,
+              latest: new Date(parsedStartTime.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days range
+            },
+            workingHours: {
+              start: 9, // 9 AM
+              end: 17  // 5 PM
+            },
+            bufferTime: 15 // 15 minutes buffer
+          });
+
+          if (smartScheduleResult.success && smartScheduleResult.event) {
+            const timeDescription = formatDateForUser(smartScheduleResult.event.start);
+            return `✅ Calendar event "${title}" scheduled successfully ${timeDescription}! Event ID: ${smartScheduleResult.event.id}`;
+          } else {
+            // If scheduling failed, provide alternatives
+            let message = `❌ ${smartScheduleResult.message}`;
+            
+            if (smartScheduleResult.alternativeTimes && smartScheduleResult.alternativeTimes.length > 0) {
+              message += '\n\n🕒 Alternative times available:';
+              smartScheduleResult.alternativeTimes.slice(0, 3).forEach((altTime, index) => {
+                message += `\n${index + 1}. ${formatDateForUser(altTime)}`;
+              });
+              message += '\n\nWould you like me to schedule for one of these times instead?';
+            }
+            
+            return message;
+          }
+        } else {
+          // Create event directly without conflict checking
+          const event = await calendarService.createEvent(userId, {
+            title: String(title),
+            description: String(description),
+            start: parsedStartTime,
+            end: parsedEndTime,
+            attendees: Array.isArray(attendees) ? attendees.map(String) : []
+          });
+          
+          const timeDescription = formatDateForUser(parsedStartTime);
+          return event 
+            ? `✅ Calendar event "${title}" created successfully ${timeDescription}! Event ID: ${event.id}`
+            : `❌ Failed to create calendar event "${title}".`;
+        }
       } catch (error) {
         console.error('Calendar event creation failed:', error);
         return `❌ Failed to create calendar event "${title}". Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -196,6 +262,144 @@ async function executeAction(intent: IntentResult, userId: string): Promise<stri
         return `❌ Failed to set reminder for ${timeInput}. Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
       }
       
+    } else if (actionType.includes('check_schedule') || intent.intent === 'check_schedule') {
+      // Check calendar permission
+      if (!permissions.calendar) {
+        return '❌ Calendar permission required to check your schedule. Please connect your Google Calendar in Settings > Connected Accounts.';
+      }
+
+      const day = params.day || params.time || 'today';
+      
+      try {
+        // Parse the day to get start and end of day
+        let startOfDay: Date;
+        let endOfDay: Date;
+        
+        const dayLower = String(day).toLowerCase();
+        const now = new Date();
+        
+        if (dayLower === 'today') {
+          startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        } else if (dayLower === 'tomorrow') {
+          const tomorrow = new Date(now);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          startOfDay = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
+          endOfDay = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 23, 59, 59);
+        } else {
+          // For other days, try to parse with time parser
+          const parsedDay = parseNaturalTime(String(day));
+          if (parsedDay) {
+            startOfDay = new Date(parsedDay.getFullYear(), parsedDay.getMonth(), parsedDay.getDate());
+            endOfDay = new Date(parsedDay.getFullYear(), parsedDay.getMonth(), parsedDay.getDate(), 23, 59, 59);
+          } else {
+            return `❌ I couldn't understand the day "${day}". Please try "today", "tomorrow", or a specific day.`;
+          }
+        }
+
+        const events = await calendarService.getEvents(userId, startOfDay, endOfDay);
+        
+        if (events.length === 0) {
+          const dayDesc = dayLower === 'today' ? 'today' : dayLower === 'tomorrow' ? 'tomorrow' : formatDateForUser(startOfDay);
+          return `📅 Your schedule for ${dayDesc} is clear! No events scheduled.`;
+        } else {
+          const dayDesc = dayLower === 'today' ? 'today' : dayLower === 'tomorrow' ? 'tomorrow' : formatDateForUser(startOfDay);
+          let message = `📅 Your schedule for ${dayDesc}:\n`;
+          
+          // Sort events by start time
+          events.sort((a, b) => a.start.getTime() - b.start.getTime());
+          
+          events.forEach((event, index) => {
+            const startTime = event.start.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit', 
+              hour12: true 
+            });
+            const endTime = event.end.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit', 
+              hour12: true 
+            });
+            message += `\n${index + 1}. ${event.title} (${startTime} - ${endTime})`;
+            if (event.location) {
+              message += ` at ${event.location}`;
+            }
+          });
+          
+          return message;
+        }
+      } catch (error) {
+        console.error('Schedule checking failed:', error);
+        return `❌ Failed to check your schedule. Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+      
+    } else if (actionType.includes('check_availability') || intent.intent === 'check_availability') {
+      // Check calendar permission
+      if (!permissions.calendar) {
+        return '❌ Calendar permission required to check availability. Please connect your Google Calendar in Settings > Connected Accounts.';
+      }
+
+      const timeInput = params.startTime || params.time || params.specificTime;
+      const day = params.day || 'today';
+      const duration = parseInt(String(params.duration || 60)); // Default 1 hour
+      
+      if (!timeInput) {
+        return '❌ Please specify the time you want to check availability for.';
+      }
+
+      try {
+        // Create full time string for parsing
+        let fullTimeString = String(timeInput);
+        if (day && !String(timeInput).includes(String(day))) {
+          fullTimeString = `${day} at ${timeInput}`;
+        }
+        
+        const startTime = parseNaturalTime(String(fullTimeString));
+        if (!startTime) {
+          return `❌ I couldn't understand the time "${timeInput}". Please try something like "5pm" or "3:30 PM".`;
+        }
+
+        const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+        
+        // Check for conflicts in the time slot
+        const conflictResult = await calendarService.checkConflicts(userId, startTime, endTime);
+        
+        const timeDesc = startTime.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit', 
+          hour12: true 
+        });
+        const dayDesc = day === 'today' ? 'today' : day === 'tomorrow' ? 'tomorrow' : day;
+        
+        if (!conflictResult.hasConflicts) {
+          return `✅ Yes, you're free at ${timeDesc} ${dayDesc}! No conflicts found.`;
+        } else {
+          let message = `❌ No, you have a conflict at ${timeDesc} ${dayDesc}:\n`;
+          
+          conflictResult.conflicts.forEach((conflict, index) => {
+            const conflictStart = conflict.start.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit', 
+              hour12: true 
+            });
+            const conflictEnd = conflict.end.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit', 
+              hour12: true 
+            });
+            message += `\n${index + 1}. ${conflict.title} (${conflictStart} - ${conflictEnd})`;
+            if (conflict.location) {
+              message += ` at ${conflict.location}`;
+            }
+          });
+          
+          return message;
+        }
+      } catch (error) {
+        console.error('Availability checking failed:', error);
+        return `❌ Failed to check availability. Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+      
     } else {
       return `✅ I understood your request: ${intent.intent}, but I'm not sure how to execute that action yet. I can help you with emails, SMS, calls, calendar events, and reminders.`;
     }
@@ -208,18 +412,26 @@ async function executeAction(intent: IntentResult, userId: string): Promise<stri
 export async function POST(req: NextRequest) {
   try {
     const payload: ElevenLabsWebhookPayload = await req.json();
-    const { user_message, conversation_history, user_id } = payload;
-
-    // Enhanced logging for debugging
-    console.log('🎤 ElevenLabs Voice Input:', { 
-      message: user_message, 
-      user: user_id,
-      timestamp: new Date().toISOString(),
-      hasHistory: !!conversation_history?.length
+    
+    console.log('🎙️ ElevenLabs Webhook received:', {
+      conversation_id: payload.conversation_id,
+      user_message: payload.user_message,
+      agent_id: payload.agent_id,
+      timestamp: payload.timestamp
     });
 
+    // Extract user ID from metadata or use a default
+    const userId = payload.metadata?.user_id || 'default-user';
+    const userMessage = payload.user_message;
+
+    if (!userMessage) {
+      return NextResponse.json({ 
+        response: "I didn't hear anything. Could you please try again?" 
+      });
+    }
+
     // OPTIMIZATION: Try lightweight parsing first to avoid OpenAI API calls
-    const lightweightIntent = parseIntentLightweight(user_message);
+    const lightweightIntent = parseIntentLightweight(userMessage);
     let intent: IntentResult;
     let actionResult = '';
 
@@ -240,7 +452,7 @@ export async function POST(req: NextRequest) {
       });
     } else {
       // Fall back to OpenAI for complex queries
-      intent = await aiService.parseIntent(user_message);
+      intent = await aiService.parseIntent(userMessage);
       console.log('🤖 Using OpenAI Parser:', { 
         intent: intent.intent, 
         confidence: intent.confidence 
@@ -249,7 +461,7 @@ export async function POST(req: NextRequest) {
     
     // Execute action if needed
     if (intent.action || (intent.intent !== 'general_chat' && intent.confidence > 0.7)) {
-      actionResult = await executeAction(intent, user_id || 'anonymous');
+      actionResult = await executeAction(intent, userId);
       console.log('🎯 Action Executed:', { 
         intent: intent.intent, 
         success: !actionResult.includes('❌')
@@ -259,14 +471,11 @@ export async function POST(req: NextRequest) {
     // Generate response only if we need general chat or action failed
     let aiResponse = '';
     if (intent.intent === 'general_chat' || actionResult.includes('❌')) {
-      aiResponse = await aiService.generateResponse(user_message, {
-        userId: user_id || 'anonymous',
+      aiResponse = await aiService.generateResponse(userMessage, {
+        userId: userId,
         currentTime: new Date(),
         timeZone: 'UTC',
-        previousMessages: conversation_history?.slice(-2).map(msg => ({
-          role: msg.role,
-          content: msg.content
-        })) || []
+        previousMessages: [] // No conversation history in webhook
       });
     } else {
       // For successful actions, use a simple confirmation
@@ -278,25 +487,24 @@ export async function POST(req: NextRequest) {
       ? `${aiResponse}\n\n${actionResult}`
       : aiResponse;
 
-    console.log('✅ Sending AI Response:', { 
+    console.log('✅ Sending Webhook Response:', { 
       responseLength: finalResponse.length,
       hasAction: !!intent.action,
       preview: finalResponse.substring(0, 150) + '...'
     });
 
     return NextResponse.json({
-      message: finalResponse,
+      response: finalResponse,
       action_taken: intent.action || null,
       intent_detected: intent.intent || null,
-      conversation_id: payload.session_id,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Agent webhook error:', error);
+    console.error('❌ ElevenLabs Webhook error:', error);
     
     return NextResponse.json({
-      message: "I'm sorry, I'm having trouble processing your request right now. Could you please try again?",
+      response: "I'm sorry, I'm having trouble processing your request right now. Could you please try again?",
       error: process.env.NODE_ENV === 'development' ? String(error) : undefined,
       timestamp: new Date().toISOString()
     }, { status: 500 });
@@ -305,15 +513,8 @@ export async function POST(req: NextRequest) {
 
 // Handle GET requests for webhook verification
 export async function GET() {
-  return NextResponse.json({
-    message: 'ElevenLabs Agent Webhook Endpoint',
-    status: 'active',
-    capabilities: [
-      'Natural language processing',
-      'Email management', 
-      'SMS sending',
-      'Calendar scheduling',
-      'Reminders and tasks'
-    ]
+  return NextResponse.json({ 
+    status: 'ElevenLabs webhook endpoint active',
+    timestamp: new Date().toISOString()
   });
 }
