@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import PhoneNumberManager from '@/components/PhoneNumberManager';
 
 interface ConnectedAccount {
   id: string;
@@ -283,6 +284,30 @@ function SettingsContent() {
           </div>
         </div>
 
+        {/* SMS Settings Section */}
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">SMS Integration</h2>
+          <p className="text-gray-600 mb-4">
+            Connect your phone number to text Jarwik directly for scheduling, emails, and more.
+          </p>
+          
+          {/* Central Number Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <span className="text-blue-600 font-semibold">📱</span>
+              </div>
+              <div>
+                <h3 className="font-medium text-blue-900">Text Jarwik at:</h3>
+                <p className="text-2xl font-mono font-bold text-blue-700">+12672147419</p>
+                <p className="text-sm text-blue-600">No app needed - just text this number!</p>
+              </div>
+            </div>
+          </div>
+
+          <PhoneNumberManager userId={user?.uid} />
+        </div>
+
         {/* Usage Instructions */}
         {hasGoogleConnection && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-8">
@@ -294,9 +319,12 @@ function SettingsContent() {
               <li>• &quot;Send an email to apoorv107@gmail.com about our meeting tomorrow&quot;</li>
               <li>• &quot;Schedule a call with Sarah at 3 PM today&quot;</li>
               <li>• &quot;Create a calendar event for team standup at 9 AM Monday&quot;</li>
-              <li>• &quot;Send an SMS to +1234567890 saying I&apos;m running late&quot;</li>
-              <li>• &quot;Remind me to review the proposal at 2 PM&quot;</li>
+              <li>• &quot;Am I free on Friday?&quot;</li>
+              <li>• &quot;What&apos;s my schedule today?&quot;</li>
             </ul>
+            <div className="mt-3 p-3 bg-blue-100 rounded-lg">
+              <p className="text-sm font-semibold text-blue-900">📱 Text these commands to: +12672147419</p>
+            </div>
           </div>
         )}
 

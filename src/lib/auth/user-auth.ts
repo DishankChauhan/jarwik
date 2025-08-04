@@ -25,9 +25,18 @@ export interface UserPermissions {
   updatedAt: Date;
 }
 
+export interface UserPhoneMapping {
+  userId: string;
+  phoneNumber: string; // E.164 format
+  addedAt: Date;
+  isVerified: boolean;
+  isActive: boolean;
+}
+
 class UserAuthService {
   private readonly COLLECTION_NAME = 'user_auth';
   private readonly ACCOUNTS_COLLECTION = 'connected_accounts';
+  private readonly PHONE_COLLECTION = 'user_phone_mappings';
 
   // Save Google OAuth tokens for a user
   async saveGoogleAuth(userId: string, tokens: GoogleOAuthTokens, email: string, scopes: string[]): Promise<void> {
@@ -204,6 +213,98 @@ class UserAuthService {
       console.error('❌ Error getting connected accounts:', error);
       return [];
     }
+  }
+
+  // Phone number mapping methods
+  async addPhoneNumber(userId: string, phoneNumber: string): Promise<void> {
+    if (!db) {
+      throw new Error('Firestore not initialized');
+    }
+
+    // Format phone number to E.164
+    const formattedPhone = this.formatPhoneNumber(phoneNumber);
+    
+    const phoneMapping: UserPhoneMapping = {
+      userId,
+      phoneNumber: formattedPhone,
+      addedAt: new Date(),
+      isVerified: false,
+      isActive: true
+    };
+
+    await setDoc(doc(db, this.PHONE_COLLECTION, formattedPhone), phoneMapping);
+  }
+
+  async getUserByPhoneNumber(phoneNumber: string): Promise<string | null> {
+    if (!db) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const formattedPhone = this.formatPhoneNumber(phoneNumber);
+      const phoneDoc = await getDoc(doc(db, this.PHONE_COLLECTION, formattedPhone));
+      
+      if (phoneDoc.exists()) {
+        const mapping = phoneDoc.data() as UserPhoneMapping;
+        return mapping.isActive ? mapping.userId : null;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error getting user by phone:', error);
+      return null;
+    }
+  }
+
+  async verifyPhoneNumber(phoneNumber: string): Promise<boolean> {
+    if (!db) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const formattedPhone = this.formatPhoneNumber(phoneNumber);
+      await updateDoc(doc(db, this.PHONE_COLLECTION, formattedPhone), {
+        isVerified: true
+      });
+      return true;
+    } catch (error) {
+      console.error('❌ Error verifying phone number:', error);
+      return false;
+    }
+  }
+
+  async removePhoneNumber(phoneNumber: string): Promise<boolean> {
+    if (!db) {
+      throw new Error('Firestore not initialized');
+    }
+
+    try {
+      const formattedPhone = this.formatPhoneNumber(phoneNumber);
+      await updateDoc(doc(db, this.PHONE_COLLECTION, formattedPhone), {
+        isActive: false
+      });
+      return true;
+    } catch (error) {
+      console.error('❌ Error removing phone number:', error);
+      return false;
+    }
+  }
+
+  private formatPhoneNumber(phoneNumber: string): string {
+    // Remove all non-digit characters
+    const digits = phoneNumber.replace(/\D/g, '');
+    
+    // Add +1 if it's a US number without country code
+    if (digits.length === 10) {
+      return `+1${digits}`;
+    }
+    
+    // Add + if not present
+    if (!phoneNumber.startsWith('+')) {
+      return `+${digits}`;
+    }
+    
+    return phoneNumber;
   }
 }
 
